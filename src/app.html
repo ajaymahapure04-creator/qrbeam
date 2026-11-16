@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d0f12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>QRBeam — offline file transfer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+:root{--bg:#0d0f12;--card:#16191e;--line:#262a31;--text:#eef0f3;--mute:#8a919c;--acc:#f2b84b;--ok:#4cc38a;--bad:#ef6b6b}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--text);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+body{min-height:100dvh;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+.wrap{max-width:560px;margin:0 auto;padding:16px}
+header{display:flex;align-items:center;gap:10px;padding:6px 0 14px}
+header h1{font-size:19px;letter-spacing:.3px}
+header h1 b{color:var(--acc)}
+.back{background:none;border:0;color:var(--text);font-size:22px;padding:4px 8px 4px 0;display:none}
+.pill{margin-left:auto;font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.pill.on{color:var(--ok);border-color:#2c5a43}
+.screen{display:none}.screen.active{display:block}
+.big{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 20px;margin-bottom:12px;color:var(--text)}
+.big .t{font-size:20px;font-weight:650}.big .s{color:var(--mute);margin-top:4px;font-size:14px}
+.big .ic{font-size:28px;float:right;opacity:.9}
+.note{color:var(--mute);font-size:13px;margin:14px 2px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+label.file{display:block;border:1.5px dashed #3a404a;border-radius:12px;padding:18px;text-align:center;color:var(--mute)}
+label.file b{color:var(--text)}
+input[type=file]{display:none}
+.row{display:flex;gap:10px;margin-top:12px}
+.row>div{flex:1}
+.lbl{font-size:12px;color:var(--mute);margin-bottom:4px}
+select{width:100%;background:#0f1216;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px;font-size:15px}
+.btn{width:100%;border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:650;background:var(--acc);color:#1a1405;margin-top:12px}
+.btn.sec{background:#232830;color:var(--text)}
+.btn:disabled{opacity:.4}
+.qrbox{background:#fff;border-radius:12px;display:flex;justify-content:center;align-items:center;padding:0;overflow:hidden;touch-action:none}
+canvas#qr{display:block;width:100%;height:auto;image-rendering:pixelated}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.stat{background:#0f1216;border:1px solid var(--line);border-radius:10px;padding:8px}
+.stat .k{font-size:11px;color:var(--mute)}.stat .v{font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.bar{height:10px;background:#0f1216;border:1px solid var(--line);border-radius:99px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#d99a2b,var(--acc));transition:width .15s}
+.vid{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:3/4}
+.vid video{width:100%;height:100%;object-fit:cover;display:block}
+.vid .guide{position:absolute;inset:10%;border:2px solid rgba(242,184,75,.8);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.25)}
+.vid .flash{position:absolute;inset:10%;border-radius:12px;border:2px solid var(--ok);opacity:0;transition:opacity .2s}
+.done{text-align:center;padding:8px 0}
+.done .ok{color:var(--ok);font-weight:650}.done .bad{color:var(--bad);font-weight:650}
+.done img{max-width:100%;border-radius:10px;margin-top:10px}
+.fname{font-weight:650;word-break:break-all;margin-top:6px}
+.hint{font-size:12px;color:var(--mute);margin-top:8px}
+.fs .wrapq{position:fixed;inset:0;background:#fff;z-index:9;display:flex;align-items:center;justify-content:center}
+.fs .wrapq canvas{width:min(100vw,100vh)!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <button class="back" id="back" aria-label="Back">←</button>
+    <h1>QR<b>Beam</b></h1>
+    <span class="pill" id="offline">offline: not set up</span>
+  </header>
+
+  <!-- HOME -->
+  <section class="screen active" id="home">
+    <button class="big" id="goSend"><span class="ic">📤</span><div class="t">Send a file</div><div class="s">Show animated QR codes on this screen</div></button>
+    <button class="big" id="goRecv"><span class="ic">📷</span><div class="t">Receive a file</div><div class="s">Point this camera at the sender's screen</div></button>
+    <p class="note">No Wi-Fi, Bluetooth, pairing or mobile data needed: the file travels as light. Once this page has loaded (or is added to your home screen), it works in airplane mode.</p>
+    <p class="note">Tips: turn the sender's brightness to max, hold the phones 15–25 cm apart, and keep them steady. Missed frames only cost time, never data.</p>
+  </section>
+
+  <!-- SEND -->
+  <section class="screen" id="send">
+    <div class="card">
+      <label class="file" for="file"><b id="fileLbl">Tap to choose a file</b><div class="hint" id="fileInfo">Photos, PDFs, anything. Best under ~5 MB.</div></label>
+      <input type="file" id="file">
+      <div class="row">
+        <div><div class="lbl">Data per frame</div>
+          <select id="chunk"><option value="300">Small · easiest scan</option><option value="600" selected>Medium</option><option value="900">Large</option><option value="1400">Max · fastest</option></select></div>
+        <div><div class="lbl">Frame rate</div>
+          <select id="fps"><option>10</option><option>15</option><option selected>20</option><option>30</option><option>45</option><option>60</option></select></div>
+      </div>
+      <button class="btn" id="startSend" disabled>Start beaming</button>
+    </div>
+    <div id="sendLive" style="display:none">
+      <div class="qrbox" id="qrbox"><canvas id="qr"></canvas></div>
+      <div class="hint">Tap the code for full screen. Keep looping until the receiver says done. Speed ≈ <span id="sEst">–</span> if every frame is caught.</div>
+      <div class="stats">
+        <div class="stat"><div class="k">Chunks</div><div class="v" id="sK">–</div></div>
+        <div class="stat"><div class="k">Frames shown</div><div class="v" id="sN">0</div></div>
+        <div class="stat"><div class="k">Real FPS</div><div class="v" id="sF">0</div></div>
+      </div>
+      <button class="btn sec" id="pauseSend">Pause</button>
+    </div>
+  </section>
+
+  <!-- RECEIVE -->
+  <section class="screen" id="recv">
+    <div id="recvLive">
+      <div class="vid"><video id="video" playsinline muted></video><div class="guide"></div><div class="flash" id="flash"></div></div>
+      <div class="bar"><i id="rBar"></i></div>
+      <div class="stats">
+        <div class="stat"><div class="k">Progress</div><div class="v" id="rP">0%</div></div>
+        <div class="stat"><div class="k">Speed</div><div class="v" id="rS">–</div></div>
+        <div class="stat"><div class="k">Time left</div><div class="v" id="rE">–</div></div>
+        <div class="stat"><div class="k">Codes read</div><div class="v" id="rN">0</div></div>
+        <div class="stat"><div class="k">Scan FPS</div><div class="v" id="rF">0</div></div>
+        <div class="stat"><div class="k">Size</div><div class="v" id="rZ">–</div></div>
+      </div>
+      <div class="hint" id="rMsg">Starting camera…</div>
+    </div>
+    <div class="card done" id="recvDone" style="display:none">
+      <div id="dStatus"></div>
+      <div class="fname" id="dName"></div>
+      <div class="hint" id="dInfo"></div>
+      <div id="dPreview"></div>
+      <button class="btn" id="dSave">Save file</button>
+      <button class="btn sec" id="dShare" style="display:none">Share…</button>
+      <button class="btn sec" id="dAgain">Receive another</button>
+    </div>
+  </section>
+</div>
+
+<script>/*__QRGEN__*/</script>
+<script>/*__JSQR__*/</script>
+<script>/*__CORE__*/</script>
+<script>
+(function(){
+'use strict';
+const $=id=>document.getElementById(id);
+const fmtB=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(2)+' MB';
+const fmtT=s=>!isFinite(s)?'–':s<60?Math.ceil(s)+'s':Math.floor(s/60)+'m '+Math.ceil(s%60)+'s';
+
+// ---------- navigation ----------
+let current='home';
+function show(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.toggle('active',s.id===id)); $('back').style.display=id==='home'?'none':'block'; current=id; }
+$('goSend').onclick=()=>show('send');
+$('goRecv').onclick=()=>{show('recv');startRecv();};
+$('back').onclick=()=>{stopSend();stopRecv();show('home');};
+
+// ---------- wake lock ----------
+let wake=null;
+async function keepAwake(on){ try{ if(on&&'wakeLock' in navigator&&!wake){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',()=>wake=null);} if(!on&&wake){await wake.release();wake=null;} }catch(e){} }
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible'&&(sending||recvOn)) keepAwake(true); });
+
+// ---------- SEND ----------
+let fileData=null, enc=null, sending=false, timer=null, shown=0, fpsCount=0, fpsT=0;
+$('file').onchange=async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const bytes=new Uint8Array(await f.arrayBuffer());
+  fileData=QRBeam.packFile(f.name,f.type,bytes);
+  $('fileLbl').textContent=f.name; $('fileInfo').textContent=fmtB(f.size)+' · ready';
+  $('startSend').disabled=false;
+};
+const qrCanvas=$('qr'), qctx=qrCanvas.getContext('2d');
+function drawQR(text){
+  const qr=qrcode(0,'L'); qr.addData(text,'Byte'); qr.make();
+  const m=qr.getModuleCount(), quiet=4, total=m+quiet*2;
+  const target=Math.min(1100,Math.max(600,Math.round(window.innerWidth*devicePixelRatio)));
+  const sc=Math.max(2,Math.floor(target/total)), W=total*sc;
+  if(qrCanvas.width!==W){qrCanvas.width=W;qrCanvas.height=W;}
+  qctx.fillStyle='#fff'; qctx.fillRect(0,0,W,W); qctx.fillStyle='#000';
+  for(let y=0;y<m;y++){ let run=-1; for(let x=0;x<=m;x++){ const d=x<m&&qr.isDark(y,x); if(d&&run<0)run=x; if(!d&&run>=0){qctx.fillRect((run+quiet)*sc,(y+quiet)*sc,(x-run)*sc,sc);run=-1;} } }
+}
+function tick(){
+  if(!sending) return;
+  const t0=performance.now();
+  drawQR(enc.packet()); shown++; fpsCount++;
+  if(t0-fpsT>1000){ $('sF').textContent=Math.round(fpsCount*1000/(t0-fpsT)); fpsCount=0; fpsT=t0; }
+  $('sN').textContent=shown;
+  const interval=1000/+$('fps').value;
+  timer=setTimeout(()=>requestAnimationFrame(tick),Math.max(0,interval-(performance.now()-t0)-2));
+}
+$('startSend').onclick=()=>{
+  enc=new QRBeam.Encoder(fileData,+$('chunk').value); shown=0; fpsT=performance.now(); fpsCount=0;
+  $('sK').textContent=enc.K; $('sEst').textContent=fmtB(+$('chunk').value*+$('fps').value)+'/s'; $('sendLive').style.display='block'; $('pauseSend').textContent='Pause';
+  sending=true; keepAwake(true); tick();
+  $('sendLive').scrollIntoView({behavior:'smooth'});
+};
+$('chunk').onchange=()=>{ if(sending&&fileData){ stopSend(); $('startSend').click(); } };
+$('pauseSend').onclick=()=>{ if(sending){stopSend();$('pauseSend').textContent='Resume';} else {sending=true;keepAwake(true);tick();$('pauseSend').textContent='Pause';} };
+function stopSend(){ sending=false; clearTimeout(timer); keepAwake(false); document.body.classList.remove('fs'); }
+$('qrbox').onclick=()=>{
+  const fs=document.body.classList.toggle('fs');
+  if(fs){ const w=document.createElement('div'); w.className='wrapq'; w.id='wrapq'; w.appendChild(qrCanvas); w.onclick=()=>$('qrbox').onclick(); document.body.appendChild(w); }
+  else { $('qrbox').appendChild(qrCanvas); const w=$('wrapq'); if(w) w.remove(); }
+};
+
+// ---------- RECEIVE ----------
+const video=$('video'); let stream=null, recvOn=false, dec=new QRBeam.Decoder(), detector=null, tStart=0, reads=0, scanCount=0, scanT=0, lastFile=null;
+const work=document.createElement('canvas'), wctx=work.getContext('2d',{willReadFrequently:true});
+async function startRecv(){
+  dec.reset(); reads=0; tStart=0; lastFile=null;
+  $('recvLive').style.display='block'; $('recvDone').style.display='none';
+  ['rP','rS','rE','rN','rF','rZ'].forEach(i=>$(i).textContent=i==='rP'?'0%':i==='rN'||i==='rF'?'0':'–'); $('rBar').style.width='0';
+  try{
+    if('BarcodeDetector' in window){ const f=await BarcodeDetector.getSupportedFormats(); if(f.includes('qr_code')) detector=new BarcodeDetector({formats:['qr_code']}); }
+  }catch(e){ detector=null; }
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:60}}});
+    video.srcObject=stream; await video.play();
+    const tr=stream.getVideoTracks()[0]; try{ const c=tr.getCapabilities?tr.getCapabilities():{}; if(c.focusMode&&c.focusMode.includes('continuous')) await tr.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){}
+    $('rMsg').textContent='Point at the sender’s QR code ('+(detector?'native':'JS')+' scanner)';
+    recvOn=true; keepAwake(true); scanT=performance.now(); scanCount=0; loop();
+  }catch(e){
+    $('rMsg').textContent='Camera unavailable: '+(e.message||e.name)+'. Allow camera access, and open this page over https.';
+  }
+}
+function stopRecv(){ recvOn=false; if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;} keepAwake(false); }
+async function scanOnce(){
+  if(video.readyState<2) return [];
+  if(detector){ const r=await detector.detect(video); return r.map(x=>x.rawValue); }
+  const vw=video.videoWidth, vh=video.videoHeight, s=Math.min(vw,vh)*0.85, sx=(vw-s)/2, sy=(vh-s)/2;
+  const out=Math.min(900,Math.round(s)); if(work.width!==out){work.width=out;work.height=out;}
+  wctx.drawImage(video,sx,sy,s,s,0,0,out,out);
+  const img=wctx.getImageData(0,0,out,out); const r=jsQR(img.data,out,out,{inversionAttempts:'dontInvert'});
+  return r?[r.data]:[];
+}
+async function loop(){
+  if(!recvOn) return;
+  let codes=[]; try{ codes=await scanOnce(); }catch(e){}
+  scanCount++;
+  for(const c of codes){
+    const r=dec.push(c);
+    if(r==='bad') continue;
+    reads++; if(!tStart) tStart=performance.now();
+    if(r==='new'){ const f=$('flash'); f.style.opacity=1; setTimeout(()=>f.style.opacity=0,80); }
+    if(r==='done'){ finishRecv(); return; }
+  }
+  const now=performance.now();
+  if(now-scanT>500){ $('rF').textContent=Math.round(scanCount*1000/(now-scanT)); scanCount=0; scanT=now; }
+  if(dec.K){
+    const p=dec.progress(), el=(now-tStart)/1000, got=dec.solved*dec.chunk, sp=el>0.3?got/el:0;
+    $('rBar').style.width=(p*100).toFixed(1)+'%'; $('rP').textContent=(p*100).toFixed(0)+'%';
+    $('rN').textContent=reads; $('rZ').textContent=fmtB(dec.total);
+    $('rS').textContent=sp?fmtB(Math.round(sp))+'/s':'–';
+    $('rE').textContent=sp?fmtT((dec.total*1.08-got)/sp):'–';
+    $('rMsg').textContent='Receiving… '+dec.solved+' / '+dec.K+' chunks';
+  }
+  if('requestVideoFrameCallback' in video && !detector) video.requestVideoFrameCallback(()=>loop()); else requestAnimationFrame(loop);
+}
+function finishRecv(){
+  const el=(performance.now()-tStart)/1000; stopRecv();
+  $('recvLive').style.display='none'; $('recvDone').style.display='block';
+  if(!dec.crcOk){ $('dStatus').innerHTML='<span class="bad">✗ Checksum mismatch, please try again</span>'; $('dName').textContent=''; $('dInfo').textContent=''; $('dPreview').innerHTML=''; $('dSave').style.display='none'; $('dShare').style.display='none'; return; }
+  const f=QRBeam.unpackFile(dec.result); lastFile=f;
+  $('dStatus').innerHTML='<span class="ok">✓ Received and verified</span>';
+  $('dName').textContent=f.name;
+  $('dInfo').textContent=fmtB(f.bytes.length)+' in '+fmtT(el)+' · '+fmtB(Math.round(f.bytes.length/Math.max(el,0.01)))+'/s · '+reads+' codes read';
+  $('dSave').style.display='block';
+  try{ const tf=new File([f.bytes],f.name,{type:f.mime}); $('dShare').style.display=navigator.canShare&&navigator.canShare({files:[tf]})?'block':'none'; }catch(e){ $('dShare').style.display='none'; }
+  $('dPreview').innerHTML='';
+  if(/^image\//.test(f.mime)){ const img=new Image(); img.src=URL.createObjectURL(new Blob([f.bytes],{type:f.mime})); $('dPreview').appendChild(img); }
+}
+$('dSave').onclick=async()=>{
+  if(!lastFile) return;
+  const blob=new Blob([lastFile.bytes],{type:lastFile.mime||'application/octet-stream'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=lastFile.name; document.body.appendChild(a); a.click(); a.remove();
+};
+$('dShare').onclick=async()=>{ if(!lastFile) return; const file=new File([lastFile.bytes],lastFile.name,{type:lastFile.mime||'application/octet-stream'}); try{ await navigator.share({files:[file]}); }catch(e){} };
+$('dAgain').onclick=()=>startRecv();
+
+// ---------- offline (service worker) ----------
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  navigator.serviceWorker.register('sw.js').then(()=>navigator.serviceWorker.ready).then(()=>{ $('offline').textContent='✓ works offline'; $('offline').classList.add('on'); }).catch(()=>{});
+}
+})();
+</script>
+</body>
+</html>
