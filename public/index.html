@@ -56,6 +56,10 @@ canvas#qr{display:block;width:100%;height:auto;image-rendering:pixelated}
 .hint{font-size:12px;color:var(--mute);margin-top:8px}
 .fs .wrapq{position:fixed;inset:0;background:#fff;z-index:9;display:flex;align-items:center;justify-content:center}
 .fs .wrapq canvas{width:min(100vw,100vh)!important}
+.warn{margin-top:12px;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;border:1px solid var(--line);background:#0f1216;color:var(--mute)}
+.warn b{color:var(--text)}
+.warn.mid{border-color:#5a4720;background:#1d1810;color:#d9c08a}
+.warn.high{border-color:#6a2b2b;background:#1f1212;color:#f0a9a9}
 .fslab{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom));left:0;right:0;text-align:center;color:#777;font-size:13px}
 </style>
 </head>
@@ -88,6 +92,7 @@ canvas#qr{display:block;width:100%;height:auto;image-rendering:pixelated}
         <div><div class="lbl">Frame rate</div>
           <select id="fps"><option>10</option><option>15</option><option selected>20</option><option>30</option><option>45</option><option>60</option></select></div>
       </div>
+      <div id="sizeWarn" class="warn" style="display:none"></div>
       <button class="btn" id="startSend" disabled>Start beaming</button>
     </div>
     <div id="sendLive" style="display:none">
@@ -12706,7 +12711,7 @@ function findAlignmentPattern(matrix, alignmentPatternQuads, topRight, topLeft, 
 'use strict';
 const $=id=>document.getElementById(id);
 const fmtB=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(1)+' KB':(b/1048576).toFixed(2)+' MB';
-const fmtT=s=>!isFinite(s)?'–':s<60?Math.ceil(s)+'s':Math.floor(s/60)+'m '+Math.ceil(s%60)+'s';
+const fmtT=s=>!isFinite(s)?'–':s<60?Math.ceil(s)+'s':s<3600?Math.floor(s/60)+'m '+Math.floor(s%60)+'s':Math.floor(s/3600)+'h '+Math.round(s%3600/60)+'m';
 
 // ---------- navigation ----------
 let current='home';
@@ -12733,20 +12738,36 @@ async function shrinkImage(f){
     return {name:f.name.replace(/\.[^.]+$/,'')+'.jpg',type:'image/jpeg',bytes:new Uint8Array(await blob.arrayBuffer())};
   }catch(e){ return null; }
 }
+const MAX_BYTES=100*1048576;
+function updateWarn(){
+  const w=$('sizeWarn'); if(!fileData){ w.style.display='none'; return; }
+  const n=fileData.length, rate=+$('chunk').value*+$('fps').value*0.6; // assume ~60% of frames caught
+  const lo=n*1.1/(rate*1.5), hi=n*1.1/(rate*0.6);
+  const est='Estimated time: <b>'+fmtT(lo)+' – '+fmtT(hi)+'</b> (depends on camera and lighting).';
+  w.style.display='block';
+  if(n>MAX_BYTES){ w.className='warn high'; w.innerHTML='<b>Too large for QR transfer ('+fmtB(n)+').</b> The phone would likely run out of memory and it would take many hours. Use Quick Share, a USB cable or a pen drive instead, or compress the file first.'; $('startSend').disabled=true; return; }
+  $('startSend').disabled=false;
+  if(n>10*1048576){ w.className='warn high'; w.innerHTML='<b>Large file ('+fmtB(n)+').</b> '+est+' QR works best under ~5 MB. For big files like videos, Quick Share or a USB cable is much faster.'; }
+  else if(n>2*1048576){ w.className='warn mid'; w.innerHTML=est+' Keep both phones steady and close together.'; }
+  else { w.className='warn'; w.innerHTML=est; }
+}
 function pickData(){
   const use=(smallFile&&$('photo').value==='small')?smallFile:origFile; if(!use) return;
   fileData=QRBeam.packFile(use.name,use.type,use.bytes);
   $('fileInfo').textContent='Sending '+fmtB(use.bytes.length)+(use===smallFile?' (reduced photo)':'')+' · ready';
+  updateWarn();
 }
 $('file').onchange=async e=>{
   const f=e.target.files[0]; if(!f) return;
   stopSend(); $('sendLive').style.display='none';
+  if(f.size>MAX_BYTES){ fileData=null; origFile=smallFile=null; $('photoRow').style.display='none'; $('fileLbl').textContent=f.name; $('fileInfo').textContent=fmtB(f.size);
+    const w=$('sizeWarn'); w.style.display='block'; w.className='warn high'; w.innerHTML='<b>Too large for QR transfer ('+fmtB(f.size)+').</b> At QR speeds this would take many hours and the phone would likely run out of memory. Use Quick Share, a USB cable or a pen drive instead, or compress the file first.'; $('startSend').disabled=true; return; }
   origFile={name:f.name,type:f.type,bytes:new Uint8Array(await f.arrayBuffer())};
   $('fileLbl').textContent=f.name; $('fileInfo').textContent='Preparing…';
   smallFile=await shrinkImage(f);
   if(smallFile){ $('photoRow').style.display='block'; $('photo').options[0].text='Faster · '+fmtB(smallFile.bytes.length); $('photo').options[1].text='Original · '+fmtB(f.size); }
   else $('photoRow').style.display='none';
-  pickData(); $('startSend').disabled=false;
+  pickData();
 };
 $('photo').onchange=()=>{ pickData(); if(sending){ stopSend(); $('startSend').click(); } };
 const qrCanvas=$('qr'), qctx=qrCanvas.getContext('2d');
@@ -12774,7 +12795,8 @@ $('startSend').onclick=()=>{
   sending=true; keepAwake(true); tick();
   if(!document.body.classList.contains('fs')) $('qrbox').onclick();
 };
-$('chunk').onchange=()=>{ if(sending&&fileData){ stopSend(); $('startSend').click(); } };
+$('fps').onchange=()=>updateWarn();
+$('chunk').onchange=()=>{ updateWarn(); if(sending&&fileData){ stopSend(); $('startSend').click(); } };
 $('pauseSend').onclick=()=>{ if(sending){stopSend();$('pauseSend').textContent='Resume';} else {sending=true;keepAwake(true);tick();$('pauseSend').textContent='Pause';} };
 function stopSend(){ sending=false; clearTimeout(timer); keepAwake(false); document.body.classList.remove('fs'); }
 $('qrbox').onclick=()=>{
